@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --card: #141414;
+  --card-border: #262626;
+  --accent: #3b82f6;
+  --accent-hover: #2563eb;
+  --muted: #737373;
+  --success: #22c55e;
+  --warning: #eab308;
+  --danger: #ef4444;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Large tap targets for job site use */
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl font-semibold transition-all duration-150 active:scale-95 min-h-12 px-6;
+}
+
+.btn-primary {
+  @apply bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800;
+}
+
+.btn-secondary {
+  @apply bg-neutral-800 text-neutral-100 hover:bg-neutral-700 border border-neutral-700;
+}
+
+.btn-success {
+  @apply bg-green-600 text-white hover:bg-green-700;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white hover:bg-red-700;
+}
+
+.btn-lg {
+  @apply min-h-14 px-8 text-lg;
+}
+
+.card {
+  @apply bg-neutral-900 border border-neutral-800 rounded-2xl p-4;
+}
+
+.input {
+  @apply w-full rounded-xl bg-neutral-800 border border-neutral-700 px-4 py-3 text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base;
+}
+
+.textarea {
+  @apply w-full rounded-xl bg-neutral-800 border border-neutral-700 px-4 py-3 text-white placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base resize-y;
+}
+
+.label {
+  @apply block text-sm font-medium text-neutral-400 mb-1.5;
+}
+
+/* Status badge colors */
+.status-new {
+  @apply bg-blue-500/20 text-blue-400;
+}
+.status-quoted {
+  @apply bg-yellow-500/20 text-yellow-400;
+}
+.status-follow_up {
+  @apply bg-orange-500/20 text-orange-400;
+}
+.status-booked {
+  @apply bg-green-500/20 text-green-400;
+}
+.status-closed {
+  @apply bg-gray-500/20 text-gray-400;
+}
+
+/* Follow-up highlight */
+.follow-up-alert {
+  @apply border-red-500/50 bg-red-500/5;
+}
+
+/* Smooth page transitions */
+.page-enter {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Recording pulse animation */
+@keyframes pulse-record {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.recording-pulse {
+  animation: pulse-record 1.5s ease-in-out infinite;
+}
+
+/* Quote page - light theme for customers */
+.quote-page {
+  background: #ffffff;
+  color: #1a1a1a;
+}
