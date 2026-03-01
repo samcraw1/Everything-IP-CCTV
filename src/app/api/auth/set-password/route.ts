@@ -1,48 +1,48 @@
 import { NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
-import { hashPassword, verifySessionToken } from "@/lib/auth";
-import { getSessionToken, setSessionCookie } from "@/lib/auth-cookies";
-import { createSessionToken } from "@/lib/auth";
+import { hashPassword, verifyPassword } from "@/lib/auth";
+import { getSessionFromCookies } from "@/lib/auth-cookies";
 
 export async function POST(request: Request) {
-  const { new_password } = await request.json();
+  const { current_password, new_password } = await request.json();
 
-  if (!new_password || new_password.length < 4) {
-    return NextResponse.json({ error: "Password must be at least 4 characters" }, { status: 400 });
+  if (!new_password || new_password.length < 6) {
+    return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
+  }
+
+  const session = await getSessionFromCookies();
+  if (!session) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   const supabase = getServiceClient();
-  const { data: settings } = await supabase
-    .from("settings")
-    .select("id, owner_password_hash")
-    .limit(1)
+  const { data: user } = await supabase
+    .from("users")
+    .select("id, password_hash")
+    .eq("id", session.userId)
     .single();
 
-  if (!settings) {
-    return NextResponse.json({ error: "Settings not found" }, { status: 500 });
+  if (!user) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  // If password already exists, require valid session
-  if (settings.owner_password_hash) {
-    const token = await getSessionToken();
-    if (!token || !(await verifySessionToken(token))) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  // Verify current password
+  if (current_password) {
+    const valid = await verifyPassword(current_password, user.password_hash);
+    if (!valid) {
+      return NextResponse.json({ error: "Current password is incorrect" }, { status: 401 });
     }
   }
 
   const hash = await hashPassword(new_password);
   const { error } = await supabase
-    .from("settings")
-    .update({ owner_password_hash: hash })
-    .eq("id", settings.id);
+    .from("users")
+    .update({ password_hash: hash })
+    .eq("id", user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-
-  // Create session so user is logged in after setting password
-  const sessionToken = await createSessionToken();
-  await setSessionCookie(sessionToken);
 
   return NextResponse.json({ success: true });
 }

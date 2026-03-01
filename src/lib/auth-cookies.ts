@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { SESSION_COOKIE_NAME, SESSION_COOKIE_MAX_AGE } from "./auth";
+import { SESSION_COOKIE_NAME, SESSION_COOKIE_MAX_AGE, verifySessionToken, SessionPayload } from "./auth";
 
 export async function setSessionCookie(token: string) {
   const cookieStore = await cookies();
@@ -20,4 +20,10 @@ export async function clearSessionCookie() {
 export async function getSessionToken(): Promise<string | undefined> {
   const cookieStore = await cookies();
   return cookieStore.get(SESSION_COOKIE_NAME)?.value;
+}
+
+export async function getSessionFromCookies(): Promise<SessionPayload | null> {
+  const token = await getSessionToken();
+  if (!token) return null;
+  return verifySessionToken(token);
 }

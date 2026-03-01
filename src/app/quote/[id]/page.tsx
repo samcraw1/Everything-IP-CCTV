@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { getServiceClient } from "@/lib/supabase";
 import { Quote, Lead, Settings } from "@/types";
 import QuotePreview from "@/components/QuotePreview";
 import QuoteResponse from "@/components/QuoteResponse";
@@ -9,6 +9,7 @@ interface PageProps {
 
 export default async function PublicQuotePage({ params }: PageProps) {
   const { id } = await params;
+  const supabase = getServiceClient();
 
   // Fetch quote
   const { data: quote } = await supabase
@@ -35,11 +36,11 @@ export default async function PublicQuotePage({ params }: PageProps) {
     .eq("id", quote.lead_id)
     .single();
 
-  // Fetch settings
+  // Fetch settings by org_id from the quote
   const { data: settings } = await supabase
     .from("settings")
     .select("*")
-    .limit(1)
+    .eq("org_id", quote.org_id)
     .single();
 
   return (

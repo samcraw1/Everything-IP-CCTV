@@ -1,5 +1,36 @@
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  plan: "free" | "pro";
+  stripe_customer_id: string | null;
+  created_at: string;
+}
+
+export interface User {
+  id: string;
+  org_id: string;
+  email: string;
+  name: string;
+  role: "owner" | "admin" | "user";
+  created_at: string;
+}
+
+export interface Camera {
+  id: string;
+  lead_id: string;
+  org_id: string;
+  name: string;
+  ip_address: string;
+  web_url: string | null;
+  brand: string | null;
+  location_note: string | null;
+  created_at: string;
+}
+
 export interface Lead {
   id: string;
+  org_id: string;
   customer_name: string;
   customer_phone: string;
   customer_address: string;
@@ -17,6 +48,7 @@ export type LeadStatus = "new" | "quoted" | "follow_up" | "booked" | "closed";
 
 export interface Quote {
   id: string;
+  org_id: string;
   lead_id: string;
   scope_of_work: string;
   line_items: LineItem[];
@@ -40,6 +72,7 @@ export interface LineItem {
 
 export interface Settings {
   id: string;
+  org_id: string;
   business_name: string;
   business_phone: string;
   business_email: string;
@@ -59,6 +92,7 @@ export interface PricingItem {
 
 export interface Schematic {
   id: string;
+  org_id: string;
   lead_id: string;
   name: string;
   canvas_data: object;

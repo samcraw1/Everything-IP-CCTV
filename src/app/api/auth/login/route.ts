@@ -4,30 +4,43 @@ import { verifyPassword, createSessionToken } from "@/lib/auth";
 import { setSessionCookie } from "@/lib/auth-cookies";
 
 export async function POST(request: NextRequest) {
-  const { password } = await request.json();
+  const { email, password } = await request.json();
 
-  if (!password) {
-    return NextResponse.json({ error: "Password required" }, { status: 400 });
+  if (!email || !password) {
+    return NextResponse.json({ error: "Email and password required" }, { status: 400 });
   }
 
   const supabase = getServiceClient();
-  const { data: settings } = await supabase
-    .from("settings")
-    .select("owner_password_hash")
-    .limit(1)
+
+  // Look up user by email
+  const { data: user, error } = await supabase
+    .from("users")
+    .select("id, org_id, email, name, password_hash, role")
+    .eq("email", email.toLowerCase().trim())
     .single();
 
-  if (!settings?.owner_password_hash) {
-    return NextResponse.json({ error: "No password set. Visit the login page to set one up." }, { status: 403 });
+  if (error || !user) {
+    return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
 
-  const valid = await verifyPassword(password, settings.owner_password_hash);
+  const valid = await verifyPassword(password, user.password_hash);
   if (!valid) {
-    return NextResponse.json({ error: "Wrong password" }, { status: 401 });
+    return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
   }
 
-  const token = await createSessionToken();
+  // Fetch org details
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("name, plan")
+    .eq("id", user.org_id)
+    .single();
+
+  const token = await createSessionToken(user.id, user.org_id);
   await setSessionCookie(token);
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({
+    success: true,
+    user: { name: user.name, email: user.email, role: user.role },
+    org: { name: org?.name, plan: org?.plan },
+  });
 }

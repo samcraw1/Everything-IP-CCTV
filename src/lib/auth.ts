@@ -52,10 +52,15 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return hashHex === expectedHashHex;
 }
 
-// --- Session tokens: HMAC-signed timestamp + nonce ---
+// --- Session tokens: HMAC-signed userId.orgId.timestamp.nonce ---
 
-export async function createSessionToken(): Promise<string> {
-  const payload = `${Date.now()}.${crypto.randomUUID()}`;
+export interface SessionPayload {
+  userId: string;
+  orgId: string;
+}
+
+export async function createSessionToken(userId: string, orgId: string): Promise<string> {
+  const payload = `${userId}.${orgId}.${Date.now()}.${crypto.randomUUID()}`;
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
@@ -69,10 +74,10 @@ export async function createSessionToken(): Promise<string> {
   return `${payload}.${sigHex}`;
 }
 
-export async function verifySessionToken(token: string): Promise<boolean> {
+export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
     const lastDot = token.lastIndexOf(".");
-    if (lastDot === -1) return false;
+    if (lastDot === -1) return null;
     const payload = token.substring(0, lastDot);
     const sigHex = token.substring(lastDot + 1);
     const encoder = new TextEncoder();
@@ -85,13 +90,20 @@ export async function verifySessionToken(token: string): Promise<boolean> {
     );
     const sigBytes = Buffer.from(sigHex, "hex");
     const valid = await crypto.subtle.verify("HMAC", key, sigBytes, encoder.encode(payload));
-    if (!valid) return false;
-    // Check expiry — payload is "timestamp.uuid"
-    const timestamp = parseInt(payload.split(".")[0], 10);
+    if (!valid) return null;
+
+    // payload is "userId.orgId.timestamp.nonce"
+    const parts = payload.split(".");
+    if (parts.length < 4) return null;
+    const userId = parts[0];
+    const orgId = parts[1];
+    const timestamp = parseInt(parts[2], 10);
     const age = (Date.now() - timestamp) / 1000;
-    return age < SESSION_MAX_AGE;
+    if (age >= SESSION_MAX_AGE) return null;
+
+    return { userId, orgId };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -102,4 +114,10 @@ export const SESSION_COOKIE_MAX_AGE = SESSION_MAX_AGE;
 
 export function getSessionTokenFromRequest(request: NextRequest): string | undefined {
   return request.cookies.get(SESSION_COOKIE)?.value;
+}
+
+export async function getSessionFromRequest(request: NextRequest): Promise<SessionPayload | null> {
+  const token = getSessionTokenFromRequest(request);
+  if (!token) return null;
+  return verifySessionToken(token);
 }

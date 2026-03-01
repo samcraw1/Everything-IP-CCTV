@@ -12,6 +12,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Account info
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [orgPlan, setOrgPlan] = useState("free");
+
   // Password change
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -19,10 +24,17 @@ export default function SettingsPage() {
   const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && !data.error) setSettings(data);
+    Promise.all([
+      fetch("/api/settings").then((res) => res.json()),
+      fetch("/api/auth/status").then((res) => res.json()),
+    ])
+      .then(([settingsData, statusData]) => {
+        if (settingsData && !settingsData.error) setSettings(settingsData);
+        if (statusData.authenticated) {
+          setUserName(statusData.user?.name || "");
+          setUserEmail(statusData.user?.email || "");
+          setOrgPlan(statusData.org?.plan || "free");
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -55,8 +67,8 @@ export default function SettingsPage() {
   };
 
   const handleChangePassword = async () => {
-    if (newPassword.length < 4) {
-      showToast("Password must be at least 4 characters", "warning");
+    if (newPassword.length < 6) {
+      showToast("Password must be at least 6 characters", "warning");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -178,6 +190,24 @@ export default function SettingsPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
+        {/* Account info */}
+        <div className="card space-y-3">
+          <h2 className="label">Account</h2>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[var(--text-primary)]">{userName}</p>
+              <p className="text-xs text-[var(--text-tertiary)] mono">{userEmail}</p>
+            </div>
+            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold mono tracking-widest uppercase ${
+              orgPlan === "pro"
+                ? "bg-[var(--accent)]/15 text-[var(--accent)]"
+                : "bg-[var(--surface-3)] text-[var(--text-tertiary)]"
+            }`}>
+              {orgPlan === "pro" ? "PRO" : "FREE"} PLAN
+            </span>
+          </div>
+        </div>
+
         {/* Business info */}
         <div className="card space-y-4">
           <h2 className="label">Business Information</h2>
@@ -321,9 +351,9 @@ export default function SettingsPage() {
           {saving ? "Saving..." : "Save Settings"}
         </button>
 
-        {/* Security */}
+        {/* Change Password */}
         <div className="card space-y-4">
-          <h2 className="label">Security</h2>
+          <h2 className="label">Change Password</h2>
 
           <div>
             <label className="label">Current Password</label>

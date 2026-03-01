@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getOpenAI } from "@/lib/openai";
 import { Settings, PricingItem, DEFAULT_PRICING, DEFAULT_TERMS } from "@/types";
+import { getOrgFromRequest, unauthorizedResponse } from "@/lib/api-auth";
+import { getServiceClient } from "@/lib/supabase";
+import { PLAN_LIMITS } from "@/lib/plan-limits";
 
 interface GenerateQuoteRequest {
   customer_name: string;
@@ -13,6 +16,25 @@ interface GenerateQuoteRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const session = await getOrgFromRequest(request);
+  if (!session) return unauthorizedResponse();
+
+  // Check plan for AI access
+  const supabase = getServiceClient();
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("plan")
+    .eq("id", session.orgId)
+    .single();
+
+  const plan = (org?.plan || "free") as keyof typeof PLAN_LIMITS;
+  if (!PLAN_LIMITS[plan].aiQuotes) {
+    return NextResponse.json(
+      { error: "AI quotes require Pro plan. Upgrade to unlock AI-powered quote generation.", upgrade: true },
+      { status: 403 }
+    );
+  }
+
   try {
     const body: GenerateQuoteRequest = await request.json();
 
@@ -20,7 +42,7 @@ export async function POST(request: NextRequest) {
     const taxRate = body.settings?.tax_rate || 8.25;
     const terms = body.settings?.default_terms || DEFAULT_TERMS;
     const validityDays = body.settings?.validity_days || 30;
-    const businessName = body.settings?.business_name || "Everything IP CCTV";
+    const businessName = body.settings?.business_name || "CCTV Installation";
 
     // Build the combined input from all sources
     let customerInput = `Customer: ${body.customer_name}\n`;

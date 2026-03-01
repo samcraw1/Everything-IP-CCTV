@@ -1,34 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase";
 import { getOrgFromRequest, unauthorizedResponse } from "@/lib/api-auth";
-import { PLAN_LIMITS } from "@/lib/plan-limits";
 import { v4 as uuidv4 } from "uuid";
 
-// GET all leads for the authenticated org
+// GET cameras for a lead
 export async function GET(request: NextRequest) {
   const session = await getOrgFromRequest(request);
   if (!session) return unauthorizedResponse();
 
   const { searchParams } = new URL(request.url);
-  const status = searchParams.get("status");
-  const search = searchParams.get("search");
+  const leadId = searchParams.get("lead_id");
+
+  if (!leadId) {
+    return NextResponse.json({ error: "lead_id required" }, { status: 400 });
+  }
 
   const supabase = getServiceClient();
-  let query = supabase
-    .from("leads")
+  const { data, error } = await supabase
+    .from("cameras")
     .select("*")
+    .eq("lead_id", leadId)
     .eq("org_id", session.orgId)
     .order("created_at", { ascending: false });
-
-  if (status && status !== "all") {
-    query = query.eq("status", status);
-  }
-
-  if (search) {
-    query = query.or(`customer_name.ilike.%${search}%,customer_address.ilike.%${search}%`);
-  }
-
-  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -37,60 +30,32 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(data);
 }
 
-// CREATE a new lead
+// CREATE a camera
 export async function POST(request: NextRequest) {
   const session = await getOrgFromRequest(request);
   if (!session) return unauthorizedResponse();
 
   const body = await request.json();
 
-  if (!body.customer_name || !body.customer_name.trim()) {
-    return NextResponse.json({ error: "Customer name is required" }, { status: 400 });
+  if (!body.lead_id || !body.name || !body.ip_address) {
+    return NextResponse.json({ error: "lead_id, name, and ip_address are required" }, { status: 400 });
   }
 
-  // Check plan limits
   const supabase = getServiceClient();
-  const { data: org } = await supabase
-    .from("organizations")
-    .select("plan")
-    .eq("id", session.orgId)
+  const { data, error } = await supabase
+    .from("cameras")
+    .insert({
+      id: uuidv4(),
+      lead_id: body.lead_id,
+      org_id: session.orgId,
+      name: body.name,
+      ip_address: body.ip_address,
+      web_url: body.web_url || null,
+      brand: body.brand || null,
+      location_note: body.location_note || null,
+    })
+    .select()
     .single();
-
-  const plan = (org?.plan || "free") as keyof typeof PLAN_LIMITS;
-  const limits = PLAN_LIMITS[plan];
-
-  const { count } = await supabase
-    .from("leads")
-    .select("id", { count: "exact", head: true })
-    .eq("org_id", session.orgId);
-
-  if (count !== null && count >= limits.maxLeads) {
-    return NextResponse.json(
-      { error: `Free plan is limited to ${limits.maxLeads} leads. Upgrade to Pro for unlimited leads.`, upgrade: true },
-      { status: 403 }
-    );
-  }
-
-  const id = uuidv4();
-  const now = new Date().toISOString();
-
-  const lead = {
-    id,
-    org_id: session.orgId,
-    customer_name: body.customer_name,
-    customer_phone: body.customer_phone || "",
-    customer_address: body.customer_address || "",
-    brain_dump: body.brain_dump || "",
-    audio_url: body.audio_url || null,
-    audio_transcription: body.audio_transcription || null,
-    photo_urls: body.photo_urls || null,
-    photo_analysis: body.photo_analysis || null,
-    status: "new",
-    created_at: now,
-    updated_at: now,
-  };
-
-  const { data, error } = await supabase.from("leads").insert(lead).select().single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -99,7 +64,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(data, { status: 201 });
 }
 
-// UPDATE lead (status change, etc.)
+// UPDATE a camera
 export async function PATCH(request: NextRequest) {
   const session = await getOrgFromRequest(request);
   if (!session) return unauthorizedResponse();
@@ -108,14 +73,12 @@ export async function PATCH(request: NextRequest) {
   const { id, ...updates } = body;
 
   if (!id) {
-    return NextResponse.json({ error: "Lead ID required" }, { status: 400 });
+    return NextResponse.json({ error: "Camera ID required" }, { status: 400 });
   }
-
-  updates.updated_at = new Date().toISOString();
 
   const supabase = getServiceClient();
   const { data, error } = await supabase
-    .from("leads")
+    .from("cameras")
     .update(updates)
     .eq("id", id)
     .eq("org_id", session.orgId)
@@ -129,7 +92,7 @@ export async function PATCH(request: NextRequest) {
   return NextResponse.json(data);
 }
 
-// DELETE a lead
+// DELETE a camera
 export async function DELETE(request: NextRequest) {
   const session = await getOrgFromRequest(request);
   if (!session) return unauthorizedResponse();
@@ -138,12 +101,12 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get("id");
 
   if (!id) {
-    return NextResponse.json({ error: "Lead ID required" }, { status: 400 });
+    return NextResponse.json({ error: "Camera ID required" }, { status: 400 });
   }
 
   const supabase = getServiceClient();
   const { error } = await supabase
-    .from("leads")
+    .from("cameras")
     .delete()
     .eq("id", id)
     .eq("org_id", session.orgId);

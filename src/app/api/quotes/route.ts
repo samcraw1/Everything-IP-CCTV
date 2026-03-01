@@ -1,13 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { getServiceClient } from "@/lib/supabase";
+import { getOrgFromRequest, unauthorizedResponse } from "@/lib/api-auth";
 import { v4 as uuidv4 } from "uuid";
 
 // GET quotes - optionally filter by lead_id
 export async function GET(request: NextRequest) {
+  const session = await getOrgFromRequest(request);
+  if (!session) return unauthorizedResponse();
+
   const { searchParams } = new URL(request.url);
   const leadId = searchParams.get("lead_id");
 
-  let query = supabase.from("quotes").select("*").order("created_at", { ascending: false });
+  const supabase = getServiceClient();
+  let query = supabase
+    .from("quotes")
+    .select("*")
+    .eq("org_id", session.orgId)
+    .order("created_at", { ascending: false });
 
   if (leadId) {
     query = query.eq("lead_id", leadId);
@@ -24,6 +33,9 @@ export async function GET(request: NextRequest) {
 
 // CREATE a new quote
 export async function POST(request: NextRequest) {
+  const session = await getOrgFromRequest(request);
+  if (!session) return unauthorizedResponse();
+
   const body = await request.json();
 
   if (!body.lead_id) {
@@ -37,6 +49,7 @@ export async function POST(request: NextRequest) {
 
   const quote = {
     id,
+    org_id: session.orgId,
     lead_id: body.lead_id,
     scope_of_work: body.scope_of_work,
     line_items: body.line_items,
@@ -49,6 +62,7 @@ export async function POST(request: NextRequest) {
     created_at: new Date().toISOString(),
   };
 
+  const supabase = getServiceClient();
   const { data, error } = await supabase.from("quotes").insert(quote).select().single();
 
   if (error) {
@@ -59,13 +73,17 @@ export async function POST(request: NextRequest) {
   await supabase
     .from("leads")
     .update({ status: "quoted", updated_at: new Date().toISOString() })
-    .eq("id", body.lead_id);
+    .eq("id", body.lead_id)
+    .eq("org_id", session.orgId);
 
   return NextResponse.json(data, { status: 201 });
 }
 
 // UPDATE a quote
 export async function PATCH(request: NextRequest) {
+  const session = await getOrgFromRequest(request);
+  if (!session) return unauthorizedResponse();
+
   const body = await request.json();
   const { id, ...updates } = body;
 
@@ -73,10 +91,12 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Quote ID required" }, { status: 400 });
   }
 
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("quotes")
     .update(updates)
     .eq("id", id)
+    .eq("org_id", session.orgId)
     .select()
     .single();
 
@@ -89,6 +109,9 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE a quote
 export async function DELETE(request: NextRequest) {
+  const session = await getOrgFromRequest(request);
+  if (!session) return unauthorizedResponse();
+
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
@@ -96,7 +119,12 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: "Quote ID required" }, { status: 400 });
   }
 
-  const { error } = await supabase.from("quotes").delete().eq("id", id);
+  const supabase = getServiceClient();
+  const { error } = await supabase
+    .from("quotes")
+    .delete()
+    .eq("id", id)
+    .eq("org_id", session.orgId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

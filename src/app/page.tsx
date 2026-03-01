@@ -14,6 +14,7 @@ export default function HomePage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [orgName, setOrgName] = useState("");
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -21,6 +22,18 @@ export default function HomePage() {
     }, 300);
     return () => clearTimeout(timer);
   }, [searchQuery]);
+
+  // Fetch org name from auth status
+  useEffect(() => {
+    fetch("/api/auth/status")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.authenticated && data.org?.name) {
+          setOrgName(data.org.name);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchData = useCallback(async () => {
     setFiltering(true);
@@ -86,7 +99,7 @@ export default function HomePage() {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-lg font-extrabold text-[var(--text-primary)] tracking-tight">
-                Everything IP
+                {orgName || "CCTV Lead Manager"}
               </h1>
               <p className="text-[11px] mono text-[var(--accent)] tracking-widest uppercase mt-0.5">
                 CCTV Lead Manager
