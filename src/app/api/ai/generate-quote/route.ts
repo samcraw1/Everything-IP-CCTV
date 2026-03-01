@@ -96,7 +96,23 @@ Make sure:
       return NextResponse.json({ error: "No response from AI" }, { status: 500 });
     }
 
-    const quoteData = JSON.parse(content);
+    // Strip markdown code fences if present
+    let cleanedContent = content.trim();
+    const fenceMatch = cleanedContent.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?\s*```$/);
+    if (fenceMatch) {
+      cleanedContent = fenceMatch[1].trim();
+    }
+
+    let quoteData;
+    try {
+      quoteData = JSON.parse(cleanedContent);
+    } catch {
+      console.error("Failed to parse AI response:", cleanedContent);
+      return NextResponse.json(
+        { error: "AI returned invalid JSON. Please try again." },
+        { status: 500 }
+      );
+    }
 
     // Add terms and validity
     quoteData.terms = terms;

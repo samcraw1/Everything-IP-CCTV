@@ -1,6 +1,20 @@
 import type { Metadata, Viewport } from "next";
+import { JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import ServiceWorkerRegistrar from "@/components/ServiceWorkerRegistrar";
+import { ToastProvider } from "@/components/Toast";
+
+const jakarta = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-body",
+  display: "swap",
+});
+
+const jetbrains = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "Everything IP CCTV",
@@ -17,7 +31,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  themeColor: "#0a0a0a",
+  themeColor: "#080b12",
 };
 
 export default function RootLayout({
@@ -26,13 +40,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${jakarta.variable} ${jetbrains.variable}`}>
       <head>
         <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
-      <body className="min-h-screen bg-neutral-950">
+      <body className="min-h-screen bg-[var(--bg)]">
         <ServiceWorkerRegistrar />
-        {children}
+        <ToastProvider>
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

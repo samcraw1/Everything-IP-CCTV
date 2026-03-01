@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Settings, PricingItem } from "@/types";
+import { useToast } from "@/components/Toast";
 
 export default function SettingsPage() {
   const router = useRouter();
+  const { showToast } = useToast();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -24,7 +25,6 @@ export default function SettingsPage() {
   const handleSave = async () => {
     if (!settings) return;
     setSaving(true);
-    setSaved(false);
 
     try {
       const res = await fetch("/api/settings", {
@@ -36,11 +36,13 @@ export default function SettingsPage() {
       if (res.ok) {
         const updated = await res.json();
         setSettings(updated);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
+        showToast("Settings saved", "success");
+      } else {
+        showToast("Failed to save settings", "error");
       }
     } catch (err) {
       console.error("Save failed:", err);
+      showToast("Failed to save settings", "error");
     } finally {
       setSaving(false);
     }
@@ -80,7 +82,7 @@ export default function SettingsPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-neutral-700 border-t-blue-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[var(--border)] border-t-[var(--accent)] rounded-full animate-spin" />
       </div>
     );
   }
@@ -88,7 +90,7 @@ export default function SettingsPage() {
   if (!settings) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p className="text-neutral-500">Failed to load settings</p>
+        <p className="text-[var(--text-tertiary)] mono">Failed to load settings</p>
       </div>
     );
   }
@@ -96,28 +98,36 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen pb-8 page-enter">
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800">
+      <div className="sticky top-0 z-40 header-texture border-b border-[var(--border)]">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.push("/")} className="p-2 -ml-2 rounded-lg hover:bg-neutral-800">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-neutral-400">
+          <button
+            onClick={() => router.push("/")}
+            className="p-2 -ml-2 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[var(--text-secondary)]">
               <path fillRule="evenodd" d="M7.72 12.53a.75.75 0 010-1.06l7.5-7.5a.75.75 0 111.06 1.06L9.31 12l6.97 6.97a.75.75 0 11-1.06 1.06l-7.5-7.5z" clipRule="evenodd" />
             </svg>
           </button>
-          <h1 className="text-xl font-bold text-white flex-1">Settings</h1>
+          <h1 className="text-base font-bold text-[var(--text-primary)] mono tracking-wide uppercase flex-1">Settings</h1>
           <button
             onClick={handleSave}
             disabled={saving}
-            className={`btn text-sm ${saved ? "btn-success" : "btn-primary"}`}
+            className="btn btn-primary text-sm disabled:opacity-50"
           >
-            {saving ? "Saving..." : saved ? "Saved!" : "Save"}
+            {saving ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-[#080b12]/30 border-t-[#080b12] rounded-full animate-spin" />
+                Saving
+              </span>
+            ) : "Save"}
           </button>
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         {/* Business info */}
         <div className="card space-y-4">
-          <h2 className="text-base font-semibold text-white">Business Information</h2>
+          <h2 className="label">Business Information</h2>
 
           <div>
             <label className="label">Business Name</label>
@@ -162,7 +172,7 @@ export default function SettingsPage() {
 
         {/* Quote defaults */}
         <div className="card space-y-4">
-          <h2 className="text-base font-semibold text-white">Quote Defaults</h2>
+          <h2 className="label">Quote Defaults</h2>
 
           <div>
             <label className="label">Tax Rate (%)</label>
@@ -170,7 +180,7 @@ export default function SettingsPage() {
               type="number"
               value={settings.tax_rate}
               onChange={(e) => setSettings({ ...settings, tax_rate: parseFloat(e.target.value) || 0 })}
-              className="input"
+              className="input mono"
               step="0.01"
               min="0"
             />
@@ -182,7 +192,7 @@ export default function SettingsPage() {
               type="number"
               value={settings.validity_days}
               onChange={(e) => setSettings({ ...settings, validity_days: parseInt(e.target.value) || 30 })}
-              className="input"
+              className="input mono"
               min="1"
             />
           </div>
@@ -201,15 +211,15 @@ export default function SettingsPage() {
         {/* Pricing table */}
         <div className="card space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-white">Default Pricing</h2>
-            <button onClick={addPricingItem} className="text-sm text-blue-400 hover:text-blue-300">
-              + Add Item
+            <h2 className="label">Default Pricing</h2>
+            <button onClick={addPricingItem} className="text-xs text-[var(--accent)] hover:text-[var(--accent)]/80 mono font-bold tracking-wide transition-colors">
+              + ADD ITEM
             </button>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2">
             {settings.pricing.map((item, i) => (
-              <div key={i} className="bg-neutral-800 rounded-xl p-3">
+              <div key={i} className="bg-[var(--surface-2)] rounded-xl p-3 border border-[var(--border)]">
                 <div className="flex items-center gap-2 mb-2">
                   <input
                     value={item.name}
@@ -217,7 +227,7 @@ export default function SettingsPage() {
                     placeholder="Item name"
                     className="input flex-1 text-sm"
                   />
-                  <button onClick={() => removePricingItem(i)} className="p-2 text-red-400 hover:text-red-300">
+                  <button onClick={() => removePricingItem(i)} className="p-2 text-[var(--danger)] hover:text-[var(--danger)]/80 transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                       <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 01.7.797l-.55 6a.75.75 0 01-1.493-.137l.55-6a.75.75 0 01.793-.66zm2.84 0a.75.75 0 01.793.66l.55 6a.75.75 0 01-1.493.137l-.55-6a.75.75 0 01.7-.797z" clipRule="evenodd" />
                     </svg>
@@ -225,18 +235,18 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <label className="text-xs text-neutral-500">Price ($)</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)] mono mb-1 block">Price ($)</label>
                     <input
                       type="number"
                       value={item.price}
                       onChange={(e) => updatePricingItem(i, "price", e.target.value)}
-                      className="input text-sm"
+                      className="input text-sm mono"
                       step="0.01"
                       min="0"
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-neutral-500">Unit</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-tertiary)] mono mb-1 block">Unit</label>
                     <input
                       value={item.unit}
                       onChange={(e) => updatePricingItem(i, "unit", e.target.value)}
@@ -253,9 +263,14 @@ export default function SettingsPage() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className={`btn btn-lg w-full ${saved ? "btn-success" : "btn-primary"}`}
+          className="btn btn-primary btn-lg w-full disabled:opacity-50 shadow-[0_0_25px_-5px_var(--accent)]"
         >
-          {saving ? "Saving..." : saved ? "Saved!" : "Save Settings"}
+          {saving ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="w-5 h-5 border-2 border-[#080b12]/30 border-t-[#080b12] rounded-full animate-spin" />
+              Saving...
+            </span>
+          ) : "Save Settings"}
         </button>
       </div>
     </div>

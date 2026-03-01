@@ -33,6 +33,11 @@ export async function GET(request: NextRequest) {
 // CREATE a new lead
 export async function POST(request: NextRequest) {
   const body = await request.json();
+
+  if (!body.customer_name || !body.customer_name.trim()) {
+    return NextResponse.json({ error: "Customer name is required" }, { status: 400 });
+  }
+
   const id = uuidv4();
   const now = new Date().toISOString();
 
@@ -83,4 +88,22 @@ export async function PATCH(request: NextRequest) {
   }
 
   return NextResponse.json(data);
+}
+
+// DELETE a lead
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "Lead ID required" }, { status: 400 });
+  }
+
+  const { error } = await supabase.from("leads").delete().eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }

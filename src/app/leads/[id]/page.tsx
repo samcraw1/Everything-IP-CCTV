@@ -6,10 +6,13 @@ import { Lead, Quote, Settings, LineItem } from "@/types";
 import StatusBadge from "@/components/StatusBadge";
 import StatusSelector from "@/components/StatusSelector";
 import QuotePreview from "@/components/QuotePreview";
+import { useToast } from "@/components/Toast";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 export default function LeadDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { showToast } = useToast();
   const leadId = params.id as string;
 
   const [lead, setLead] = useState<Lead | null>(null);
@@ -22,6 +25,13 @@ export default function LeadDetailPage() {
   const [editedQuote, setEditedQuote] = useState<Quote | null>(null);
   const [savingQuote, setSavingQuote] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -101,7 +111,6 @@ export default function LeadDetailPage() {
       const quoteData = await res.json();
 
       if (res.ok) {
-        // Save the quote
         const saveRes = await fetch("/api/quotes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -118,11 +127,11 @@ export default function LeadDetailPage() {
           setLead({ ...lead, status: "quoted" });
         }
       } else {
-        alert("Failed to generate quote: " + (quoteData.error || "Unknown error"));
+        showToast("Failed to generate quote: " + (quoteData.error || "Unknown error"), "error");
       }
     } catch (err) {
       console.error("Quote generation failed:", err);
-      alert("Failed to generate quote. Please try again.");
+      showToast("Failed to generate quote. Please try again.", "error");
     } finally {
       setGenerating(false);
     }
@@ -144,6 +153,7 @@ export default function LeadDetailPage() {
         setQuote(updated);
         setEditedQuote(updated);
         setEditingQuote(false);
+        showToast("Quote saved", "success");
       }
     } catch (err) {
       console.error("Quote save failed:", err);
@@ -203,10 +213,32 @@ export default function LeadDetailPage() {
 
     if (navigator.share) {
       navigator.share({ title: "Camera Installation Quote", text: message, url: quoteUrl });
-    } else {
-      // Fallback to SMS
+    } else if (lead.customer_phone) {
       const smsUrl = `sms:${lead.customer_phone}?body=${encodeURIComponent(message)}`;
       window.open(smsUrl, "_blank");
+    } else {
+      navigator.clipboard.writeText(quoteUrl).then(() => {
+        showToast("Quote link copied to clipboard", "success");
+      }).catch(() => {
+        showToast("Could not copy link", "error");
+      });
+    }
+  };
+
+  const handleDeleteLead = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/leads?id=${leadId}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast("Lead deleted", "success");
+        router.push("/");
+      } else {
+        showToast("Failed to delete lead", "error");
+      }
+    } catch {
+      showToast("Failed to delete lead", "error");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -219,7 +251,6 @@ export default function LeadDetailPage() {
     const previewEl = document.getElementById("quote-pdf-content");
     if (!previewEl) return;
 
-    // Temporarily make it visible for rendering
     previewEl.style.position = "fixed";
     previewEl.style.left = "-9999px";
     previewEl.style.top = "0";
@@ -248,7 +279,7 @@ export default function LeadDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-neutral-700 border-t-blue-500 rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[var(--surface-3)] border-t-[var(--accent)] rounded-full animate-spin" />
       </div>
     );
   }
@@ -257,7 +288,7 @@ export default function LeadDetailPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-neutral-500 mb-4">Lead not found</p>
+          <p className="text-[var(--text-secondary)] mb-4">Lead not found</p>
           <button onClick={() => router.push("/")} className="btn btn-primary">
             Go Home
           </button>
@@ -269,14 +300,14 @@ export default function LeadDetailPage() {
   if (showPreview && quote) {
     return (
       <div className="min-h-screen pb-8 page-enter">
-        <div className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800">
+        <div className="sticky top-0 z-40 header-texture border-b border-[var(--border)]">
           <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-            <button onClick={() => setShowPreview(false)} className="p-2 -ml-2 rounded-lg hover:bg-neutral-800">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-neutral-400">
+            <button onClick={() => setShowPreview(false)} className="p-2 -ml-2 rounded-lg hover:bg-[var(--surface-2)]">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[var(--text-secondary)]">
                 <path fillRule="evenodd" d="M7.72 12.53a.75.75 0 010-1.06l7.5-7.5a.75.75 0 111.06 1.06L9.31 12l6.97 6.97a.75.75 0 11-1.06 1.06l-7.5-7.5z" clipRule="evenodd" />
               </svg>
             </button>
-            <h1 className="text-xl font-bold text-white flex-1">Quote Preview</h1>
+            <h1 className="text-base font-bold text-[var(--text-primary)] flex-1 mono tracking-wide uppercase">Quote Preview</h1>
             <button onClick={handleShare} className="btn btn-primary text-sm">Share</button>
           </div>
         </div>
@@ -290,15 +321,15 @@ export default function LeadDetailPage() {
   return (
     <div className="min-h-screen pb-8 page-enter">
       {/* Header */}
-      <div className="sticky top-0 z-40 bg-neutral-950/95 backdrop-blur-sm border-b border-neutral-800">
+      <div className="sticky top-0 z-40 header-texture border-b border-[var(--border)]">
         <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <button onClick={() => router.push("/")} className="p-2 -ml-2 rounded-lg hover:bg-neutral-800">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-neutral-400">
+          <button onClick={() => router.push("/")} className="p-2 -ml-2 rounded-lg hover:bg-[var(--surface-2)]">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[var(--text-secondary)]">
               <path fillRule="evenodd" d="M7.72 12.53a.75.75 0 010-1.06l7.5-7.5a.75.75 0 111.06 1.06L9.31 12l6.97 6.97a.75.75 0 11-1.06 1.06l-7.5-7.5z" clipRule="evenodd" />
             </svg>
           </button>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-white">{lead.customer_name}</h1>
+            <h1 className="text-lg font-bold text-[var(--text-primary)]">{lead.customer_name}</h1>
           </div>
           <button onClick={() => setShowStatusSelector(true)}>
             <StatusBadge status={lead.status} size="md" />
@@ -306,52 +337,71 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+      <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
         {/* Customer info card */}
         <div className="card">
-          <h2 className="text-sm font-medium text-neutral-500 mb-3">Customer Details</h2>
+          <h2 className="label mb-3">Customer Details</h2>
           {lead.customer_phone && (
-            <a href={`tel:${lead.customer_phone}`} className="flex items-center gap-3 py-2 text-blue-400 hover:text-blue-300">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+            <a href={`tel:${lead.customer_phone}`} className="flex items-center gap-3 py-2 text-[var(--accent)] hover:text-[var(--accent-hover)] transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
                 <path fillRule="evenodd" d="M1.5 4.5a3 3 0 013-3h1.372c.86 0 1.61.586 1.819 1.42l1.105 4.423a1.875 1.875 0 01-.694 1.955l-1.293.97c-.135.101-.164.249-.126.352a11.285 11.285 0 006.697 6.697c.103.038.25.009.352-.126l.97-1.293a1.875 1.875 0 011.955-.694l4.423 1.105c.834.209 1.42.959 1.42 1.82V19.5a3 3 0 01-3 3h-2.25C8.552 22.5 1.5 15.448 1.5 6.75V4.5z" clipRule="evenodd" />
               </svg>
-              {lead.customer_phone}
+              <span className="mono text-sm">{lead.customer_phone}</span>
             </a>
           )}
           {lead.customer_address && (
-            <p className="flex items-center gap-3 py-2 text-neutral-300">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-neutral-500">
+            <p className="flex items-center gap-3 py-2 text-[var(--text-secondary)]">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-[var(--text-tertiary)]">
                 <path fillRule="evenodd" d="M11.54 22.351l.07.04.028.016a.76.76 0 00.723 0l.028-.015.071-.041a16.975 16.975 0 001.144-.742 19.58 19.58 0 002.683-2.282c1.944-1.99 3.963-4.98 3.963-8.827a8.25 8.25 0 00-16.5 0c0 3.846 2.02 6.837 3.963 8.827a19.58 19.58 0 002.682 2.282 16.975 16.975 0 001.145.742zM12 13.5a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
               </svg>
-              {lead.customer_address}
+              <span className="text-sm">{lead.customer_address}</span>
             </p>
           )}
-          <p className="text-sm text-neutral-500 mt-2">
-            Created {new Date(lead.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+          <p className="text-xs text-[var(--text-tertiary)] mono mt-2">
+            {new Date(lead.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
           </p>
         </div>
 
         {/* Brain dump */}
         {lead.brain_dump && (
           <div className="card">
-            <h2 className="text-sm font-medium text-neutral-500 mb-2">Notes</h2>
-            <p className="text-neutral-300 text-sm leading-relaxed whitespace-pre-wrap">{lead.brain_dump}</p>
+            <h2 className="label mb-2">Notes</h2>
+            <p className="text-[var(--text-secondary)] text-sm leading-relaxed whitespace-pre-wrap">{lead.brain_dump}</p>
           </div>
         )}
 
         {/* Audio transcription */}
         {lead.audio_transcription && (
           <div className="card">
-            <h2 className="text-sm font-medium text-neutral-500 mb-2">Voice Memo Transcription</h2>
-            <p className="text-neutral-300 text-sm leading-relaxed">{lead.audio_transcription}</p>
+            <h2 className="label mb-2">Voice Memo</h2>
+            <p className="text-[var(--text-secondary)] text-sm leading-relaxed">{lead.audio_transcription}</p>
+          </div>
+        )}
+
+        {/* Site photos */}
+        {lead.photo_urls && lead.photo_urls.length > 0 && (
+          <div className="card">
+            <h2 className="label mb-3">Site Photos</h2>
+            <div className="grid grid-cols-2 gap-2">
+              {lead.photo_urls.map((url, i) => (
+                <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="block group">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={url}
+                    alt={`Site photo ${i + 1}`}
+                    className="w-full h-36 object-cover rounded-lg bg-[var(--surface-2)] group-hover:opacity-80 transition-opacity"
+                  />
+                </a>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Photo analysis */}
         {lead.photo_analysis && (
           <div className="card">
-            <h2 className="text-sm font-medium text-neutral-500 mb-2">Site Photo Analysis</h2>
-            <p className="text-neutral-300 text-sm leading-relaxed">{lead.photo_analysis}</p>
+            <h2 className="label mb-2">AI Photo Analysis</h2>
+            <p className="text-[var(--text-secondary)] text-sm leading-relaxed whitespace-pre-wrap">{lead.photo_analysis}</p>
           </div>
         )}
 
@@ -360,12 +410,12 @@ export default function LeadDetailPage() {
           <button
             onClick={handleGenerateQuote}
             disabled={generating}
-            className="btn btn-primary btn-lg w-full"
+            className="btn btn-primary btn-lg w-full shadow-[0_0_25px_-5px_var(--accent)]"
           >
             {generating ? (
               <div className="flex items-center gap-3">
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Generating Quote with AI...
+                <div className="w-5 h-5 border-2 border-[#080b12]/30 border-t-[#080b12] rounded-full animate-spin" />
+                <span>Generating Quote...</span>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -380,18 +430,18 @@ export default function LeadDetailPage() {
         ) : (
           <>
             {/* Quote actions */}
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button onClick={() => setShowPreview(true)} className="btn btn-primary flex-1">
-                Preview Quote
+                Preview
               </button>
               <button onClick={handleShare} className="btn btn-success flex-1">
-                Send to Customer
+                Send
               </button>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button onClick={handleExportPDF} className="btn btn-secondary flex-1">
-                Export PDF
+                PDF
               </button>
               <button
                 onClick={() => {
@@ -400,17 +450,28 @@ export default function LeadDetailPage() {
                 }}
                 className="btn btn-secondary flex-1"
               >
-                {editingQuote ? "Cancel Edit" : "Edit Quote"}
+                {editingQuote ? "Cancel" : "Edit"}
               </button>
-              <button onClick={handleGenerateQuote} disabled={generating} className="btn btn-secondary flex-1">
-                {generating ? "Regenerating..." : "Regenerate"}
+              <button
+                onClick={() => {
+                  setConfirmAction({
+                    title: "Regenerate Quote",
+                    message: "This will create a new AI-generated quote and replace the existing one. Continue?",
+                    confirmLabel: "Regenerate",
+                    onConfirm: () => { setConfirmAction(null); handleGenerateQuote(); },
+                  });
+                }}
+                disabled={generating}
+                className="btn btn-secondary flex-1"
+              >
+                {generating ? "..." : "Redo"}
               </button>
             </div>
 
             {/* Editable quote or read-only display */}
             {editingQuote && editedQuote ? (
               <div className="card space-y-4">
-                <h2 className="text-base font-semibold text-white">Edit Quote</h2>
+                <h2 className="label">Edit Quote</h2>
 
                 <div>
                   <label className="label">Scope of Work</label>
@@ -425,13 +486,13 @@ export default function LeadDetailPage() {
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="label mb-0">Line Items</label>
-                    <button onClick={addLineItem} className="text-sm text-blue-400 hover:text-blue-300">
-                      + Add Item
+                    <button onClick={addLineItem} className="text-xs font-bold text-[var(--accent)] hover:text-[var(--accent-hover)] mono">
+                      + ADD
                     </button>
                   </div>
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {editedQuote.line_items.map((item, i) => (
-                      <div key={i} className="bg-neutral-800 rounded-xl p-3 space-y-2">
+                      <div key={i} className="bg-[var(--surface-2)] rounded-xl p-3 space-y-2 border border-[var(--border)]">
                         <div className="flex items-center gap-2">
                           <input
                             value={item.description}
@@ -439,7 +500,7 @@ export default function LeadDetailPage() {
                             placeholder="Item description"
                             className="input flex-1 text-sm"
                           />
-                          <button onClick={() => removeLineItem(i)} className="p-2 text-red-400 hover:text-red-300">
+                          <button onClick={() => removeLineItem(i)} className="p-2 text-[var(--danger)] hover:text-[var(--danger)]/80">
                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                               <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 01.7.797l-.55 6a.75.75 0 01-1.493-.137l.55-6a.75.75 0 01.793-.66zm2.84 0a.75.75 0 01.793.66l.55 6a.75.75 0 01-1.493.137l-.55-6a.75.75 0 01.7-.797z" clipRule="evenodd" />
                             </svg>
@@ -447,30 +508,16 @@ export default function LeadDetailPage() {
                         </div>
                         <div className="flex gap-2">
                           <div className="flex-1">
-                            <label className="text-xs text-neutral-500">Qty</label>
-                            <input
-                              type="number"
-                              value={item.quantity}
-                              onChange={(e) => updateLineItem(i, "quantity", e.target.value)}
-                              className="input text-sm"
-                              min="0"
-                              step="1"
-                            />
+                            <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Qty</label>
+                            <input type="number" value={item.quantity} onChange={(e) => updateLineItem(i, "quantity", e.target.value)} className="input text-sm mono" min="0" step="1" />
                           </div>
                           <div className="flex-1">
-                            <label className="text-xs text-neutral-500">Unit Price</label>
-                            <input
-                              type="number"
-                              value={item.unit_price}
-                              onChange={(e) => updateLineItem(i, "unit_price", e.target.value)}
-                              className="input text-sm"
-                              min="0"
-                              step="0.01"
-                            />
+                            <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Price</label>
+                            <input type="number" value={item.unit_price} onChange={(e) => updateLineItem(i, "unit_price", e.target.value)} className="input text-sm mono" min="0" step="0.01" />
                           </div>
                           <div className="flex-1">
-                            <label className="text-xs text-neutral-500">Total</label>
-                            <div className="input text-sm bg-neutral-900 text-neutral-400">
+                            <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Total</label>
+                            <div className="input text-sm mono bg-[var(--surface-3)] text-[var(--text-tertiary)]">
                               ${item.total.toFixed(2)}
                             </div>
                           </div>
@@ -480,46 +527,32 @@ export default function LeadDetailPage() {
                   </div>
                 </div>
 
-                <div className="bg-neutral-800 rounded-xl p-3 space-y-1">
+                <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-2 border border-[var(--border)]">
                   <div className="flex justify-between text-sm">
-                    <span className="text-neutral-400">Subtotal</span>
-                    <span className="text-white">${editedQuote.subtotal.toFixed(2)}</span>
+                    <span className="text-[var(--text-tertiary)]">Subtotal</span>
+                    <span className="text-[var(--text-primary)] mono">${editedQuote.subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-neutral-400">Tax</span>
-                    <span className="text-white">${editedQuote.tax.toFixed(2)}</span>
+                    <span className="text-[var(--text-tertiary)]">Tax</span>
+                    <span className="text-[var(--text-primary)] mono">${editedQuote.tax.toFixed(2)}</span>
                   </div>
-                  <div className="flex justify-between text-base font-bold pt-1 border-t border-neutral-700">
-                    <span className="text-white">Total</span>
-                    <span className="text-white">${editedQuote.total.toFixed(2)}</span>
+                  <div className="flex justify-between text-lg font-bold pt-2 border-t border-[var(--border)]">
+                    <span className="text-[var(--text-primary)]">Total</span>
+                    <span className="text-[var(--accent)] mono">${editedQuote.total.toFixed(2)}</span>
                   </div>
                 </div>
 
                 <div>
                   <label className="label">Notes</label>
-                  <textarea
-                    value={editedQuote.notes || ""}
-                    onChange={(e) => setEditedQuote({ ...editedQuote, notes: e.target.value })}
-                    rows={3}
-                    className="textarea text-sm"
-                  />
+                  <textarea value={editedQuote.notes || ""} onChange={(e) => setEditedQuote({ ...editedQuote, notes: e.target.value })} rows={3} className="textarea text-sm" />
                 </div>
 
                 <div>
                   <label className="label">Terms</label>
-                  <textarea
-                    value={editedQuote.terms}
-                    onChange={(e) => setEditedQuote({ ...editedQuote, terms: e.target.value })}
-                    rows={4}
-                    className="textarea text-sm"
-                  />
+                  <textarea value={editedQuote.terms} onChange={(e) => setEditedQuote({ ...editedQuote, terms: e.target.value })} rows={4} className="textarea text-sm" />
                 </div>
 
-                <button
-                  onClick={handleSaveEditedQuote}
-                  disabled={savingQuote}
-                  className="btn btn-primary w-full"
-                >
+                <button onClick={handleSaveEditedQuote} disabled={savingQuote} className="btn btn-primary w-full">
                   {savingQuote ? "Saving..." : "Save Changes"}
                 </button>
               </div>
@@ -530,6 +563,22 @@ export default function LeadDetailPage() {
             )}
           </>
         )}
+
+        {/* Delete lead */}
+        <button
+          onClick={() =>
+            setConfirmAction({
+              title: "Delete Lead",
+              message: `Are you sure you want to delete ${lead.customer_name}? This cannot be undone.`,
+              confirmLabel: "Delete",
+              onConfirm: () => { setConfirmAction(null); handleDeleteLead(); },
+            })
+          }
+          disabled={deleting}
+          className="btn btn-secondary w-full text-[var(--danger)] hover:bg-[var(--danger-dim)] border-[var(--danger)]/20"
+        >
+          {deleting ? "Deleting..." : "Delete Lead"}
+        </button>
       </div>
 
       {/* Hidden element for PDF export */}
@@ -543,8 +592,31 @@ export default function LeadDetailPage() {
       {showStatusSelector && (
         <StatusSelector
           currentStatus={lead.status}
-          onSelect={handleStatusChange}
+          onSelect={(status) => {
+            if (status === "closed") {
+              setShowStatusSelector(false);
+              setConfirmAction({
+                title: "Close Lead",
+                message: "Mark this lead as Closed/Lost? You can change it back later.",
+                confirmLabel: "Close",
+                onConfirm: () => { setConfirmAction(null); handleStatusChange(status); },
+              });
+            } else {
+              handleStatusChange(status);
+            }
+          }}
           onClose={() => setShowStatusSelector(false)}
+        />
+      )}
+
+      {/* Confirm dialog */}
+      {confirmAction && (
+        <ConfirmDialog
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          onConfirm={confirmAction.onConfirm}
+          onCancel={() => setConfirmAction(null)}
         />
       )}
     </div>

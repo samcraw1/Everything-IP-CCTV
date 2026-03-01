@@ -25,6 +25,14 @@ export async function GET(request: NextRequest) {
 // CREATE a new quote
 export async function POST(request: NextRequest) {
   const body = await request.json();
+
+  if (!body.lead_id) {
+    return NextResponse.json({ error: "Lead ID is required" }, { status: 400 });
+  }
+  if (!body.scope_of_work || !body.scope_of_work.trim()) {
+    return NextResponse.json({ error: "Scope of work is required" }, { status: 400 });
+  }
+
   const id = uuidv4();
 
   const quote = {
@@ -77,4 +85,22 @@ export async function PATCH(request: NextRequest) {
   }
 
   return NextResponse.json(data);
+}
+
+// DELETE a quote
+export async function DELETE(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "Quote ID required" }, { status: 400 });
+  }
+
+  const { error } = await supabase.from("quotes").delete().eq("id", id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
