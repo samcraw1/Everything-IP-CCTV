@@ -39,6 +39,13 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Strip sensitive fields
+  if (data) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { owner_password_hash, ...safeData } = data;
+    return NextResponse.json(safeData);
+  }
+
   return NextResponse.json(data);
 }
 

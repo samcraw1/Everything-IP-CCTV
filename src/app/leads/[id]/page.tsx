@@ -22,10 +22,12 @@ export default function LeadDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [showStatusSelector, setShowStatusSelector] = useState(false);
   const [editingQuote, setEditingQuote] = useState(false);
+  const [isManualCreate, setIsManualCreate] = useState(false);
   const [editedQuote, setEditedQuote] = useState<Quote | null>(null);
   const [savingQuote, setSavingQuote] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     message: string;
@@ -137,29 +139,108 @@ export default function LeadDetailPage() {
     }
   };
 
+  const handleStartManualQuote = () => {
+    const taxRate = settings?.tax_rate || 8.25;
+    const validDays = settings?.validity_days || 30;
+    const validUntil = new Date();
+    validUntil.setDate(validUntil.getDate() + validDays);
+
+    const blankQuote: Quote = {
+      id: "",
+      lead_id: leadId,
+      scope_of_work: "",
+      line_items: [{ description: "", quantity: 1, unit_price: 0, total: 0 }],
+      subtotal: 0,
+      tax: 0,
+      total: 0,
+      terms: settings?.default_terms || "",
+      valid_until: validUntil.toISOString(),
+      notes: null,
+      created_at: new Date().toISOString(),
+    };
+
+    setEditedQuote(blankQuote);
+    setIsManualCreate(true);
+    setEditingQuote(true);
+
+    // Recalculate with tax
+    recalculateTotals(blankQuote.line_items, taxRate, blankQuote);
+  };
+
   const handleSaveEditedQuote = async () => {
     if (!editedQuote) return;
+
+    if (isManualCreate && !editedQuote.scope_of_work.trim()) {
+      showToast("Please enter a scope of work", "warning");
+      return;
+    }
+
     setSavingQuote(true);
 
     try {
-      const res = await fetch("/api/quotes", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editedQuote),
-      });
+      if (isManualCreate) {
+        // Create new quote
+        const res = await fetch("/api/quotes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lead_id: leadId,
+            scope_of_work: editedQuote.scope_of_work,
+            line_items: editedQuote.line_items,
+            subtotal: editedQuote.subtotal,
+            tax: editedQuote.tax,
+            total: editedQuote.total,
+            terms: editedQuote.terms,
+            valid_until: editedQuote.valid_until,
+            notes: editedQuote.notes,
+          }),
+        });
 
-      if (res.ok) {
-        const updated = await res.json();
-        setQuote(updated);
-        setEditedQuote(updated);
-        setEditingQuote(false);
-        showToast("Quote saved", "success");
+        if (res.ok) {
+          const savedQuote = await res.json();
+          setQuote(savedQuote);
+          setEditedQuote(savedQuote);
+          setEditingQuote(false);
+          setIsManualCreate(false);
+          if (lead) setLead({ ...lead, status: "quoted" });
+          showToast("Quote created", "success");
+        } else {
+          showToast("Failed to save quote", "error");
+        }
+      } else {
+        // Update existing quote
+        const res = await fetch("/api/quotes", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(editedQuote),
+        });
+
+        if (res.ok) {
+          const updated = await res.json();
+          setQuote(updated);
+          setEditedQuote(updated);
+          setEditingQuote(false);
+          showToast("Quote saved", "success");
+        }
       }
     } catch (err) {
       console.error("Quote save failed:", err);
+      showToast("Failed to save quote", "error");
     } finally {
       setSavingQuote(false);
     }
+  };
+
+  const recalculateTotals = (items: LineItem[], taxRate: number, base: Quote) => {
+    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
+    const tax = subtotal * (taxRate / 100);
+    setEditedQuote({
+      ...base,
+      line_items: items,
+      subtotal,
+      tax,
+      total: subtotal + tax,
+    });
   };
 
   const updateLineItem = (index: number, field: keyof LineItem, value: string | number) => {
@@ -177,39 +258,50 @@ export default function LeadDetailPage() {
     }
 
     items[index] = item;
-    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
     const taxRate = settings?.tax_rate || 8.25;
-    const tax = subtotal * (taxRate / 100);
-
-    setEditedQuote({
-      ...editedQuote,
-      line_items: items,
-      subtotal,
-      tax,
-      total: subtotal + tax,
-    });
+    recalculateTotals(items, taxRate, { ...editedQuote, line_items: items });
   };
 
   const addLineItem = () => {
     if (!editedQuote) return;
     const items = [...editedQuote.line_items, { description: "", quantity: 1, unit_price: 0, total: 0 }];
-    setEditedQuote({ ...editedQuote, line_items: items });
+    const taxRate = settings?.tax_rate || 8.25;
+    recalculateTotals(items, taxRate, editedQuote);
+  };
+
+  const addFromCatalog = (name: string, price: number) => {
+    if (!editedQuote) return;
+    const newItem: LineItem = { description: name, quantity: 1, unit_price: price, total: price };
+    const items = [...editedQuote.line_items, newItem];
+    const taxRate = settings?.tax_rate || 8.25;
+    recalculateTotals(items, taxRate, editedQuote);
+    setShowCatalog(false);
   };
 
   const removeLineItem = (index: number) => {
     if (!editedQuote) return;
     const items = editedQuote.line_items.filter((_, i) => i !== index);
-    const subtotal = items.reduce((sum, i) => sum + i.total, 0);
     const taxRate = settings?.tax_rate || 8.25;
-    const tax = subtotal * (taxRate / 100);
-    setEditedQuote({ ...editedQuote, line_items: items, subtotal, tax, total: subtotal + tax });
+    recalculateTotals(items, taxRate, editedQuote);
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!lead || !quote) return;
     const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
     const quoteUrl = `${siteUrl}/quote/${quote.id}`;
     const message = `Hi ${lead.customer_name}, here's your quote for the camera installation: ${quoteUrl}`;
+
+    // Mark quote as sent
+    try {
+      await fetch("/api/quotes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: quote.id, quote_status: "sent" }),
+      });
+      setQuote({ ...quote, quote_status: "sent" });
+    } catch {
+      // Non-blocking — sharing still works
+    }
 
     if (navigator.share) {
       navigator.share({ title: "Camera Installation Quote", text: message, url: quoteUrl });
@@ -406,29 +498,63 @@ export default function LeadDetailPage() {
         )}
 
         {/* Quote section */}
-        {!quote ? (
-          <button
-            onClick={handleGenerateQuote}
-            disabled={generating}
-            className="btn btn-primary btn-lg w-full shadow-[0_0_25px_-5px_var(--accent)]"
-          >
-            {generating ? (
-              <div className="flex items-center gap-3">
-                <div className="w-5 h-5 border-2 border-[#080b12]/30 border-t-[#080b12] rounded-full animate-spin" />
-                <span>Generating Quote...</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
-                  <path d="M12 .75a8.25 8.25 0 00-4.135 15.39c.686.398 1.115 1.008 1.134 1.623a.75.75 0 00.577.706c.352.083.71.148 1.074.195.323.041.6-.218.6-.544v-4.661a6.714 6.714 0 01-.937-.171.75.75 0 11.374-1.453 5.261 5.261 0 002.626 0 .75.75 0 11.374 1.452 6.712 6.712 0 01-.937.172v4.66c0 .327.277.586.6.545.364-.047.722-.112 1.074-.195a.75.75 0 00.577-.706c.02-.615.448-1.225 1.134-1.623A8.25 8.25 0 0012 .75z" />
-                  <path fillRule="evenodd" d="M9.013 19.9a.75.75 0 01.877-.597 11.319 11.319 0 004.22 0 .75.75 0 11.28 1.473 12.819 12.819 0 01-4.78 0 .75.75 0 01-.597-.876zM9.754 22.344a.75.75 0 01.824-.668 13.682 13.682 0 002.844 0 .75.75 0 11.156 1.492 15.156 15.156 0 01-3.156 0 .75.75 0 01-.668-.824z" clipRule="evenodd" />
+        {!quote && !editingQuote ? (
+          <div className="flex gap-2">
+            <button
+              onClick={handleGenerateQuote}
+              disabled={generating}
+              className="btn btn-primary flex-1 shadow-[0_0_25px_-5px_var(--accent)]"
+            >
+              {generating ? (
+                <div className="flex items-center gap-2 justify-center">
+                  <div className="w-4 h-4 border-2 border-[#080b12]/30 border-t-[#080b12] rounded-full animate-spin" />
+                  <span>Generating...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path d="M12 .75a8.25 8.25 0 00-4.135 15.39c.686.398 1.115 1.008 1.134 1.623a.75.75 0 00.577.706c.352.083.71.148 1.074.195.323.041.6-.218.6-.544v-4.661a6.714 6.714 0 01-.937-.171.75.75 0 11.374-1.453 5.261 5.261 0 002.626 0 .75.75 0 11.374 1.452 6.712 6.712 0 01-.937.172v4.66c0 .327.277.586.6.545.364-.047.722-.112 1.074-.195a.75.75 0 00.577-.706c.02-.615.448-1.225 1.134-1.623A8.25 8.25 0 0012 .75z" />
+                    <path fillRule="evenodd" d="M9.013 19.9a.75.75 0 01.877-.597 11.319 11.319 0 004.22 0 .75.75 0 11.28 1.473 12.819 12.819 0 01-4.78 0 .75.75 0 01-.597-.876zM9.754 22.344a.75.75 0 01.824-.668 13.682 13.682 0 002.844 0 .75.75 0 11.156 1.492 15.156 15.156 0 01-3.156 0 .75.75 0 01-.668-.824z" clipRule="evenodd" />
+                  </svg>
+                  AI Quote
+                </div>
+              )}
+            </button>
+            <button
+              onClick={handleStartManualQuote}
+              className="btn btn-secondary flex-1"
+            >
+              <div className="flex items-center gap-2 justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                  <path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" />
                 </svg>
-                Generate Quote with AI
+                Manual Quote
+              </div>
+            </button>
+          </div>
+        ) : quote && !editingQuote ? (
+          <>
+            {/* Quote status indicator */}
+            {quote.quote_status && quote.quote_status !== "pending" && (
+              <div className={`card flex items-center gap-2 text-sm ${
+                quote.quote_status === "accepted" ? "text-[var(--success)]" :
+                quote.quote_status === "declined" ? "text-[var(--danger)]" :
+                "text-[var(--warning)]"
+              }`}>
+                <span className={`w-2 h-2 rounded-full ${
+                  quote.quote_status === "accepted" ? "bg-[var(--success)]" :
+                  quote.quote_status === "declined" ? "bg-[var(--danger)]" :
+                  "bg-[var(--warning)]"
+                }`} />
+                <span className="mono uppercase tracking-wide text-xs font-bold">
+                  {quote.quote_status === "sent" ? "Quote Sent" :
+                   quote.quote_status === "accepted" ? "Customer Accepted" :
+                   quote.quote_status === "declined" ? "Customer Declined" :
+                   quote.quote_status}
+                </span>
               </div>
             )}
-          </button>
-        ) : (
-          <>
+
             {/* Quote actions */}
             <div className="flex gap-2">
               <button onClick={() => setShowPreview(true)} className="btn btn-primary flex-1">
@@ -445,12 +571,13 @@ export default function LeadDetailPage() {
               </button>
               <button
                 onClick={() => {
-                  setEditingQuote(!editingQuote);
+                  setEditingQuote(true);
+                  setIsManualCreate(false);
                   setEditedQuote(quote);
                 }}
                 className="btn btn-secondary flex-1"
               >
-                {editingQuote ? "Cancel" : "Edit"}
+                Edit
               </button>
               <button
                 onClick={() => {
@@ -468,100 +595,140 @@ export default function LeadDetailPage() {
               </button>
             </div>
 
-            {/* Editable quote or read-only display */}
-            {editingQuote && editedQuote ? (
-              <div className="card space-y-4">
-                <h2 className="label">Edit Quote</h2>
+            <div className="card">
+              <QuotePreview quote={quote} lead={lead} settings={settings} />
+            </div>
+          </>
+        ) : null}
 
-                <div>
-                  <label className="label">Scope of Work</label>
-                  <textarea
-                    value={editedQuote.scope_of_work}
-                    onChange={(e) => setEditedQuote({ ...editedQuote, scope_of_work: e.target.value })}
-                    rows={4}
-                    className="textarea text-sm"
-                  />
-                </div>
+        {/* Editable quote (manual create or edit existing) */}
+        {editingQuote && editedQuote && (
+          <div className="card space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="label">{isManualCreate ? "Create Quote" : "Edit Quote"}</h2>
+              <button
+                onClick={() => {
+                  setEditingQuote(false);
+                  setIsManualCreate(false);
+                  if (quote) setEditedQuote(quote);
+                }}
+                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] mono"
+              >
+                CANCEL
+              </button>
+            </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="label mb-0">Line Items</label>
-                    <button onClick={addLineItem} className="text-xs font-bold text-[var(--accent)] hover:text-[var(--accent-hover)] mono">
-                      + ADD
+            <div>
+              <label className="label">Scope of Work</label>
+              <textarea
+                value={editedQuote.scope_of_work}
+                onChange={(e) => setEditedQuote({ ...editedQuote, scope_of_work: e.target.value })}
+                rows={4}
+                className="textarea text-sm"
+                placeholder="Describe the work to be performed..."
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="label mb-0">Line Items</label>
+                <div className="flex gap-2">
+                  {settings && settings.pricing.length > 0 && (
+                    <button
+                      onClick={() => setShowCatalog(!showCatalog)}
+                      className="text-xs font-bold text-[var(--success)] hover:text-[var(--success)]/80 mono"
+                    >
+                      + CATALOG
                     </button>
-                  </div>
-                  <div className="space-y-2">
-                    {editedQuote.line_items.map((item, i) => (
-                      <div key={i} className="bg-[var(--surface-2)] rounded-xl p-3 space-y-2 border border-[var(--border)]">
-                        <div className="flex items-center gap-2">
-                          <input
-                            value={item.description}
-                            onChange={(e) => updateLineItem(i, "description", e.target.value)}
-                            placeholder="Item description"
-                            className="input flex-1 text-sm"
-                          />
-                          <button onClick={() => removeLineItem(i)} className="p-2 text-[var(--danger)] hover:text-[var(--danger)]/80">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                              <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 01.7.797l-.55 6a.75.75 0 01-1.493-.137l.55-6a.75.75 0 01.793-.66zm2.84 0a.75.75 0 01.793.66l.55 6a.75.75 0 01-1.493.137l-.55-6a.75.75 0 01.7-.797z" clipRule="evenodd" />
-                            </svg>
-                          </button>
-                        </div>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Qty</label>
-                            <input type="number" value={item.quantity} onChange={(e) => updateLineItem(i, "quantity", e.target.value)} className="input text-sm mono" min="0" step="1" />
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Price</label>
-                            <input type="number" value={item.unit_price} onChange={(e) => updateLineItem(i, "unit_price", e.target.value)} className="input text-sm mono" min="0" step="0.01" />
-                          </div>
-                          <div className="flex-1">
-                            <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Total</label>
-                            <div className="input text-sm mono bg-[var(--surface-3)] text-[var(--text-tertiary)]">
-                              ${item.total.toFixed(2)}
-                            </div>
-                          </div>
+                  )}
+                  <button onClick={addLineItem} className="text-xs font-bold text-[var(--accent)] hover:text-[var(--accent-hover)] mono">
+                    + ADD
+                  </button>
+                </div>
+              </div>
+
+              {/* Pricing catalog dropdown */}
+              {showCatalog && settings && (
+                <div className="mb-3 bg-[var(--surface-2)] rounded-xl border border-[var(--border)] p-2 max-h-48 overflow-y-auto">
+                  {settings.pricing.map((item, i) => (
+                    <button
+                      key={i}
+                      onClick={() => addFromCatalog(item.name, item.price)}
+                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-[var(--surface-3)] transition-colors text-sm"
+                    >
+                      <span className="text-[var(--text-secondary)]">{item.name}</span>
+                      <span className="text-[var(--text-tertiary)] mono text-xs">${item.price.toFixed(2)}/{item.unit}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {editedQuote.line_items.map((item, i) => (
+                  <div key={i} className="bg-[var(--surface-2)] rounded-xl p-3 space-y-2 border border-[var(--border)]">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={item.description}
+                        onChange={(e) => updateLineItem(i, "description", e.target.value)}
+                        placeholder="Item description"
+                        className="input flex-1 text-sm"
+                      />
+                      <button onClick={() => removeLineItem(i)} className="p-2 text-[var(--danger)] hover:text-[var(--danger)]/80">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.519.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 01.7.797l-.55 6a.75.75 0 01-1.493-.137l.55-6a.75.75 0 01.793-.66zm2.84 0a.75.75 0 01.793.66l.55 6a.75.75 0 01-1.493.137l-.55-6a.75.75 0 01.7-.797z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="flex-1">
+                        <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Qty</label>
+                        <input type="number" value={item.quantity} onChange={(e) => updateLineItem(i, "quantity", e.target.value)} className="input text-sm mono" min="0" step="1" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Price</label>
+                        <input type="number" value={item.unit_price} onChange={(e) => updateLineItem(i, "unit_price", e.target.value)} className="input text-sm mono" min="0" step="0.01" />
+                      </div>
+                      <div className="flex-1">
+                        <label className="text-[10px] text-[var(--text-tertiary)] mono uppercase">Total</label>
+                        <div className="input text-sm mono bg-[var(--surface-3)] text-[var(--text-tertiary)]">
+                          ${item.total.toFixed(2)}
                         </div>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
-
-                <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-2 border border-[var(--border)]">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[var(--text-tertiary)]">Subtotal</span>
-                    <span className="text-[var(--text-primary)] mono">${editedQuote.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[var(--text-tertiary)]">Tax</span>
-                    <span className="text-[var(--text-primary)] mono">${editedQuote.tax.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold pt-2 border-t border-[var(--border)]">
-                    <span className="text-[var(--text-primary)]">Total</span>
-                    <span className="text-[var(--accent)] mono">${editedQuote.total.toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="label">Notes</label>
-                  <textarea value={editedQuote.notes || ""} onChange={(e) => setEditedQuote({ ...editedQuote, notes: e.target.value })} rows={3} className="textarea text-sm" />
-                </div>
-
-                <div>
-                  <label className="label">Terms</label>
-                  <textarea value={editedQuote.terms} onChange={(e) => setEditedQuote({ ...editedQuote, terms: e.target.value })} rows={4} className="textarea text-sm" />
-                </div>
-
-                <button onClick={handleSaveEditedQuote} disabled={savingQuote} className="btn btn-primary w-full">
-                  {savingQuote ? "Saving..." : "Save Changes"}
-                </button>
+                ))}
               </div>
-            ) : (
-              <div className="card">
-                <QuotePreview quote={quote} lead={lead} settings={settings} />
+            </div>
+
+            <div className="bg-[var(--surface-2)] rounded-xl p-4 space-y-2 border border-[var(--border)]">
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-tertiary)]">Subtotal</span>
+                <span className="text-[var(--text-primary)] mono">${editedQuote.subtotal.toFixed(2)}</span>
               </div>
-            )}
-          </>
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-tertiary)]">Tax ({settings?.tax_rate || 8.25}%)</span>
+                <span className="text-[var(--text-primary)] mono">${editedQuote.tax.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-lg font-bold pt-2 border-t border-[var(--border)]">
+                <span className="text-[var(--text-primary)]">Total</span>
+                <span className="text-[var(--accent)] mono">${editedQuote.total.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">Notes</label>
+              <textarea value={editedQuote.notes || ""} onChange={(e) => setEditedQuote({ ...editedQuote, notes: e.target.value })} rows={3} className="textarea text-sm" placeholder="Optional notes or recommendations..." />
+            </div>
+
+            <div>
+              <label className="label">Terms</label>
+              <textarea value={editedQuote.terms} onChange={(e) => setEditedQuote({ ...editedQuote, terms: e.target.value })} rows={4} className="textarea text-sm" />
+            </div>
+
+            <button onClick={handleSaveEditedQuote} disabled={savingQuote} className="btn btn-primary w-full">
+              {savingQuote ? "Saving..." : isManualCreate ? "Create Quote" : "Save Changes"}
+            </button>
+          </div>
         )}
 
         {/* Delete lead */}

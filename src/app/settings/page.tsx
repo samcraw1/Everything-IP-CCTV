@@ -12,6 +12,12 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Password change
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [changingPassword, setChangingPassword] = useState(false);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
@@ -45,6 +51,53 @@ export default function SettingsPage() {
       showToast("Failed to save settings", "error");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 4) {
+      showToast("Password must be at least 4 characters", "warning");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast("Passwords don't match", "warning");
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      const res = await fetch("/api/auth/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        showToast("Password changed", "success");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        showToast(data.error || "Failed to change password", "error");
+      }
+    } catch {
+      showToast("Failed to change password", "error");
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } catch {
+      showToast("Logout failed", "error");
     }
   };
 
@@ -259,18 +312,67 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Save button at bottom */}
+        {/* Save button */}
         <button
           onClick={handleSave}
           disabled={saving}
           className="btn btn-primary btn-lg w-full disabled:opacity-50 shadow-[0_0_25px_-5px_var(--accent)]"
         >
-          {saving ? (
-            <span className="flex items-center justify-center gap-2">
-              <span className="w-5 h-5 border-2 border-[#080b12]/30 border-t-[#080b12] rounded-full animate-spin" />
-              Saving...
-            </span>
-          ) : "Save Settings"}
+          {saving ? "Saving..." : "Save Settings"}
+        </button>
+
+        {/* Security */}
+        <div className="card space-y-4">
+          <h2 className="label">Security</h2>
+
+          <div>
+            <label className="label">Current Password</label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              className="input"
+              autoComplete="current-password"
+            />
+          </div>
+
+          <div>
+            <label className="label">New Password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="input"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div>
+            <label className="label">Confirm New Password</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="input"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <button
+            onClick={handleChangePassword}
+            disabled={changingPassword || !newPassword}
+            className="btn btn-secondary w-full disabled:opacity-50"
+          >
+            {changingPassword ? "Changing..." : "Change Password"}
+          </button>
+        </div>
+
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className="btn btn-secondary w-full text-[var(--danger)] hover:bg-[var(--danger-dim)] border-[var(--danger)]/20"
+        >
+          Log Out
         </button>
       </div>
     </div>

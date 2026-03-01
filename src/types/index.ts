@@ -26,6 +26,8 @@ export interface Quote {
   terms: string;
   valid_until: string;
   notes: string | null;
+  quote_status?: "pending" | "sent" | "accepted" | "declined";
+  customer_response_at?: string | null;
   created_at: string;
 }
 

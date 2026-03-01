@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { Quote, Lead, Settings } from "@/types";
 import QuotePreview from "@/components/QuotePreview";
+import QuoteResponse from "@/components/QuoteResponse";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -49,6 +50,13 @@ export default async function PublicQuotePage({ params }: PageProps) {
         settings={settings as Settings | null}
         isPublic
       />
+      <div className="max-w-3xl mx-auto">
+        <QuoteResponse
+          quoteId={id}
+          initialStatus={quote.quote_status || "pending"}
+          responseDate={quote.customer_response_at}
+        />
+      </div>
     </div>
   );
 }
