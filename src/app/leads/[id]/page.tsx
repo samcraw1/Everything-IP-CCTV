@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Lead, Quote, Settings, LineItem } from "@/types";
+import { Lead, Quote, Settings, LineItem, Schematic } from "@/types";
 import StatusBadge from "@/components/StatusBadge";
 import StatusSelector from "@/components/StatusSelector";
 import QuotePreview from "@/components/QuotePreview";
+import SchematicCard from "@/components/SchematicCard";
 import { useToast } from "@/components/Toast";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
@@ -18,6 +19,7 @@ export default function LeadDetailPage() {
   const [lead, setLead] = useState<Lead | null>(null);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [schematics, setSchematics] = useState<Schematic[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [showStatusSelector, setShowStatusSelector] = useState(false);
@@ -37,15 +39,17 @@ export default function LeadDetailPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [leadsRes, quotesRes, settingsRes] = await Promise.all([
+      const [leadsRes, quotesRes, settingsRes, schematicsRes] = await Promise.all([
         fetch(`/api/leads?status=all`),
         fetch(`/api/quotes?lead_id=${leadId}`),
         fetch("/api/settings"),
+        fetch(`/api/schematics?lead_id=${leadId}`),
       ]);
 
       const leadsData = await leadsRes.json();
       const quotesData = await quotesRes.json();
       const settingsData = await settingsRes.json();
+      const schematicsData = await schematicsRes.json();
 
       if (Array.isArray(leadsData)) {
         const found = leadsData.find((l: Lead) => l.id === leadId);
@@ -59,6 +63,10 @@ export default function LeadDetailPage() {
 
       if (settingsData && !settingsData.error) {
         setSettings(settingsData);
+      }
+
+      if (Array.isArray(schematicsData)) {
+        setSchematics(schematicsData);
       }
     } catch (err) {
       console.error("Failed to fetch data:", err);
@@ -338,34 +346,205 @@ export default function LeadDetailPage() {
     if (!quote || !lead) return;
 
     const { default: jsPDF } = await import("jspdf");
-    const { default: html2canvas } = await import("html2canvas");
+    const pdf = new jsPDF("p", "mm", "a4");
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20;
+    const contentWidth = pageWidth - margin * 2;
+    let y = margin;
 
-    const previewEl = document.getElementById("quote-pdf-content");
-    if (!previewEl) return;
+    const checkPageBreak = (needed: number) => {
+      if (y + needed > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+      }
+    };
 
-    previewEl.style.position = "fixed";
-    previewEl.style.left = "-9999px";
-    previewEl.style.top = "0";
-    previewEl.style.width = "800px";
-    previewEl.style.display = "block";
-    previewEl.style.background = "#ffffff";
-    previewEl.style.padding = "40px";
+    // Business header
+    const bizName = settings?.business_name || "Everything IP CCTV";
+    pdf.setFontSize(18);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(bizName, margin, y);
+    y += 8;
 
-    try {
-      const canvas = await html2canvas(previewEl, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
-      const imgData = canvas.toDataURL("image/png");
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(100);
+    const bizDetails = [settings?.business_phone, settings?.business_email, settings?.business_address].filter(Boolean);
+    bizDetails.forEach((line) => {
+      pdf.text(line!, margin, y);
+      y += 4.5;
+    });
+    y += 4;
 
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    // Divider
+    pdf.setDrawColor(200);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 8;
 
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`quote-${lead.customer_name.replace(/\s+/g, "-").toLowerCase()}.pdf`);
-    } finally {
-      previewEl.style.display = "none";
-      previewEl.style.position = "";
-      previewEl.style.left = "";
+    // QUOTE title + date
+    pdf.setTextColor(0);
+    pdf.setFontSize(16);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("QUOTE", margin, y);
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(100);
+    const dateStr = new Date(quote.created_at).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    pdf.text(dateStr, pageWidth - margin, y, { align: "right" });
+    y += 10;
+
+    // Customer info box
+    pdf.setTextColor(0);
+    pdf.setFillColor(245, 245, 245);
+    pdf.roundedRect(margin, y, contentWidth, 22, 2, 2, "F");
+    y += 6;
+    pdf.setFontSize(8);
+    pdf.setTextColor(120);
+    pdf.text("PREPARED FOR", margin + 4, y);
+    y += 5;
+    pdf.setFontSize(11);
+    pdf.setTextColor(0);
+    pdf.setFont("helvetica", "bold");
+    pdf.text(lead.customer_name, margin + 4, y);
+    y += 5;
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(80);
+    const custDetails = [lead.customer_address, lead.customer_phone].filter(Boolean);
+    custDetails.forEach((line) => {
+      pdf.text(line!, margin + 4, y);
+      y += 4;
+    });
+    y += 8;
+
+    // Scope of work
+    checkPageBreak(20);
+    pdf.setFontSize(8);
+    pdf.setTextColor(120);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("SCOPE OF WORK", margin, y);
+    y += 5;
+    pdf.setFontSize(9);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(40);
+    const scopeLines = pdf.splitTextToSize(quote.scope_of_work, contentWidth);
+    scopeLines.forEach((line: string) => {
+      checkPageBreak(5);
+      pdf.text(line, margin, y);
+      y += 4.5;
+    });
+    y += 6;
+
+    // Line items table
+    checkPageBreak(20);
+    pdf.setFontSize(8);
+    pdf.setTextColor(120);
+    pdf.setFont("helvetica", "bold");
+    // Table header
+    const colItem = margin;
+    const colQty = margin + contentWidth * 0.55;
+    const colPrice = margin + contentWidth * 0.7;
+    const colTotal = margin + contentWidth - 1;
+
+    pdf.text("ITEM", colItem, y);
+    pdf.text("QTY", colQty, y);
+    pdf.text("PRICE", colPrice, y);
+    pdf.text("TOTAL", colTotal, y, { align: "right" });
+    y += 2;
+    pdf.setDrawColor(200);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 5;
+
+    // Table rows
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(40);
+    pdf.setFontSize(9);
+    quote.line_items.forEach((item) => {
+      checkPageBreak(8);
+      const descLines = pdf.splitTextToSize(item.description, contentWidth * 0.5);
+      pdf.text(descLines[0] || "", colItem, y);
+      pdf.text(String(item.quantity), colQty, y);
+      pdf.text(`$${item.unit_price.toFixed(2)}`, colPrice, y);
+      pdf.text(`$${item.total.toFixed(2)}`, colTotal, y, { align: "right" });
+      y += 3;
+      pdf.setDrawColor(230);
+      pdf.line(margin, y, pageWidth - margin, y);
+      y += 5;
+    });
+    y += 2;
+
+    // Totals box
+    checkPageBreak(25);
+    pdf.setFillColor(245, 245, 245);
+    pdf.roundedRect(margin + contentWidth * 0.5, y, contentWidth * 0.5, 24, 2, 2, "F");
+    const totalsX = margin + contentWidth * 0.52;
+    const totalsValX = pageWidth - margin - 2;
+    y += 6;
+    pdf.setFontSize(9);
+    pdf.setTextColor(80);
+    pdf.text("Subtotal", totalsX, y);
+    pdf.text(`$${quote.subtotal.toFixed(2)}`, totalsValX, y, { align: "right" });
+    y += 5;
+    pdf.text("Tax", totalsX, y);
+    pdf.text(`$${quote.tax.toFixed(2)}`, totalsValX, y, { align: "right" });
+    y += 2;
+    pdf.setDrawColor(200);
+    pdf.line(totalsX, y, totalsValX, y);
+    y += 5;
+    pdf.setFontSize(12);
+    pdf.setFont("helvetica", "bold");
+    pdf.setTextColor(0);
+    pdf.text("Total", totalsX, y);
+    pdf.text(`$${quote.total.toFixed(2)}`, totalsValX, y, { align: "right" });
+    y += 10;
+
+    // Notes
+    if (quote.notes) {
+      checkPageBreak(15);
+      pdf.setFontSize(8);
+      pdf.setTextColor(120);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("NOTES & RECOMMENDATIONS", margin, y);
+      y += 5;
+      pdf.setFontSize(9);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(40);
+      const noteLines = pdf.splitTextToSize(quote.notes, contentWidth);
+      noteLines.forEach((line: string) => {
+        checkPageBreak(5);
+        pdf.text(line, margin, y);
+        y += 4.5;
+      });
+      y += 6;
     }
+
+    // Terms
+    checkPageBreak(15);
+    pdf.setFontSize(8);
+    pdf.setTextColor(120);
+    pdf.setFont("helvetica", "bold");
+    pdf.text("TERMS & CONDITIONS", margin, y);
+    y += 5;
+    pdf.setFontSize(8);
+    pdf.setFont("helvetica", "normal");
+    pdf.setTextColor(100);
+    const termLines = pdf.splitTextToSize(quote.terms, contentWidth);
+    termLines.forEach((line: string) => {
+      checkPageBreak(4);
+      pdf.text(line, margin, y);
+      y += 3.8;
+    });
+    y += 6;
+
+    // Validity
+    checkPageBreak(8);
+    pdf.setFontSize(9);
+    pdf.setTextColor(120);
+    const validDate = new Date(quote.valid_until).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+    pdf.text(`This quote is valid until ${validDate}`, pageWidth / 2, y, { align: "center" });
+
+    pdf.save(`quote-${lead.customer_name.replace(/\s+/g, "-").toLowerCase()}.pdf`);
   };
 
   if (loading) {
@@ -497,6 +676,63 @@ export default function LeadDetailPage() {
           </div>
         )}
 
+        {/* Schematics section */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="label mb-0">Schematics</h2>
+            <span className="text-[10px] mono text-[var(--text-tertiary)]">{schematics.length} drawing{schematics.length !== 1 ? "s" : ""}</span>
+          </div>
+
+          {schematics.length > 0 && (
+            <div className="space-y-2 mb-3">
+              {schematics.map((s) => (
+                <SchematicCard
+                  key={s.id}
+                  schematic={s}
+                  onEdit={() => router.push(`/leads/${leadId}/schematic`)}
+                  onDelete={async () => {
+                    if (!confirm("Delete this schematic?")) return;
+                    try {
+                      await fetch(`/api/schematics?id=${s.id}`, { method: "DELETE" });
+                      setSchematics((prev) => prev.filter((x) => x.id !== s.id));
+                      showToast("Schematic deleted", "success");
+                    } catch {
+                      showToast("Failed to delete", "error");
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => router.push(`/leads/${leadId}/schematic`)}
+              className="btn btn-secondary flex-1 text-sm"
+            >
+              <div className="flex items-center gap-2 justify-center">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M12 3.75a.75.75 0 01.75.75v6.75h6.75a.75.75 0 010 1.5h-6.75v6.75a.75.75 0 01-1.5 0v-6.75H4.5a.75.75 0 010-1.5h6.75V4.5a.75.75 0 01.75-.75z" clipRule="evenodd" />
+                </svg>
+                New Schematic
+              </div>
+            </button>
+            {lead.photo_urls && lead.photo_urls.length > 0 && (
+              <button
+                onClick={() => router.push(`/leads/${leadId}/schematic?photo=0`)}
+                className="btn btn-secondary flex-1 text-sm"
+              >
+                <div className="flex items-center gap-2 justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M1.5 6a2.25 2.25 0 012.25-2.25h16.5A2.25 2.25 0 0122.5 6v12a2.25 2.25 0 01-2.25 2.25H3.75A2.25 2.25 0 011.5 18V6zM3 16.06V18c0 .414.336.75.75.75h16.5A.75.75 0 0021 18v-1.94l-2.69-2.689a1.5 1.5 0 00-2.12 0l-.88.879.97.97a.75.75 0 11-1.06 1.06l-5.16-5.159a1.5 1.5 0 00-2.12 0L3 16.061zm10.125-7.81a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0z" clipRule="evenodd" />
+                  </svg>
+                  Draw on Photo
+                </div>
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Quote section */}
         {!quote && !editingQuote ? (
           <div className="flex gap-2">
@@ -567,7 +803,7 @@ export default function LeadDetailPage() {
 
             <div className="flex gap-2">
               <button onClick={handleExportPDF} className="btn btn-secondary flex-1">
-                PDF
+                Export PDF
               </button>
               <button
                 onClick={() => {
@@ -747,13 +983,6 @@ export default function LeadDetailPage() {
           {deleting ? "Deleting..." : "Delete Lead"}
         </button>
       </div>
-
-      {/* Hidden element for PDF export */}
-      {quote && lead && (
-        <div id="quote-pdf-content" style={{ display: "none" }}>
-          <QuotePreview quote={quote} lead={lead} settings={settings} isPublic />
-        </div>
-      )}
 
       {/* Status selector modal */}
       {showStatusSelector && (

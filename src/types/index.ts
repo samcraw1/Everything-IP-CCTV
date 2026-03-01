@@ -57,6 +57,16 @@ export interface PricingItem {
   unit: string;
 }
 
+export interface Schematic {
+  id: string;
+  lead_id: string;
+  name: string;
+  canvas_data: object;
+  thumbnail_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export const DEFAULT_PRICING: PricingItem[] = [
   { name: "Indoor Camera (2MP)", price: 85, unit: "each" },
   { name: "Indoor Camera (4MP)", price: 120, unit: "each" },
